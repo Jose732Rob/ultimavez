@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prediccion de dibujos feos</title>
+    <!-- Añadir TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin-top: 50px;
+        }
+        canvas {
+            border: 2px solid #000;
+            margin: 20px auto;
+            display: block;
+            background-color: white;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prediccion de dibujos feos</h1>
+    
+    <!-- Canvas para dibujar -->
+    <canvas id="drawingCanvas" width="280" height="280"></canvas>
+    
+    <!-- Botones -->
+    <button id="clearButton">Limpiar</button>
+    <button id="predictButton">Predecir</button>
+    
+    <!-- Resultado -->
+    <div id="predictionResult" style="font-size: 24px; margin-top: 20px;"></div>
+
+    <script>
+        // Configuración del canvas
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        let isDrawing = false;
+        let model; // Variable para almacenar el modelo
+
+        // Cargar el modelo al iniciar la página
+        async function loadModel() {
+            model = await tf.loadLayersModel('model/model.json');
+            console.log("Modelo cargado");
+        }
+        loadModel();
+
+        // Eventos para dibujar
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        // Botones
+        document.getElementById('clearButton').addEventListener('click', clearCanvas);
+        document.getElementById('predictButton').addEventListener('click', predictDrawing);
+
+        function startDrawing(e) {
+            isDrawing = true;
+            draw(e);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            ctx.lineWidth = 15;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#000000';
+            
+            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(e.offsetX, e.offsetY);
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+            ctx.beginPath();
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('predictionResult').innerText = '';
+        }
+
+        async function predictDrawing() {
+            if (!model) {
+                alert("El modelo aún se está cargando. Intenta de nuevo en unos segundos.");
+                return;
+            }
+
+            // 1. Redimensionar y preprocesar la imagen
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 28;
+            tempCanvas.height = 28;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Dibujar la imagen original en el canvas temporal (redimensionando)
+            tempCtx.drawImage(canvas, 0, 0, 28, 28);
+            
+            // 2. Convertir a tensor y normalizar (como en el entrenamiento)
+            const imgData = tempCtx.getImageData(0, 0, 28, 28);
+            const tensor = tf.browser.fromPixels(imgData)
+                .mean(2)                    // Convertir a escala de grises
+                .expandDims(0)              // Añadir dimensión de batch [1, 28, 28]
+                .expandDims(-1)             // Añadir canal [1, 28, 28, 1]
+                .toFloat()                  // Convertir a float32
+                .div(255.0);                // Normalizar [0-1]
+
+            // 3. Hacer la predicción
+            const predictions = await model.predict(tensor).data();
+            
+            // 4. Mostrar resultados (ajusta según tus clases)
+            const classNames = ["Camiseta", "Pantalón", "Suéter", "Vestido", "Abrigo", 
+                              "Sandalia", "Camisa", "Zapatilla", "Bolso", "Botín"];
+            
+            const topPredictionIndex = tf.argMax(predictions).dataSync()[0];
+            const confidence = predictions[topPredictionIndex] * 100;
+            
+            document.getElementById('predictionResult').innerHTML = `
+                Predicción: <strong>${classNames[topPredictionIndex]}</strong><br>
+                Confianza: ${confidence.toFixed(1)}%
+            `;
+
+            // Liberar memoria
+            tensor.dispose();
+        }
+    </script>
+</body>
+</html>
